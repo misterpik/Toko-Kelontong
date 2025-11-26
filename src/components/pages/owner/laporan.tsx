@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/../supabase/supabase';
 import { useAuth } from '@/../supabase/auth';
+import * as XLSX from 'xlsx';
 
 interface Sale {
   id: string;
@@ -195,10 +196,92 @@ export default function ReportsPage() {
   };
 
   const handleExport = () => {
-    toast({
-      title: 'Export',
-      description: 'Fitur export sedang dalam pengembangan',
-    });
+    try {
+      // Prepare data for export
+      const dateFilterLabel = {
+        today: 'Hari Ini',
+        week: '7 Hari Terakhir',
+        month: '30 Hari Terakhir',
+        year: '1 Tahun Terakhir',
+      }[dateFilter];
+
+      // Summary data
+      const summaryData = [
+        ['LAPORAN KEUANGAN'],
+        ['Periode:', dateFilterLabel],
+        ['Tanggal Export:', new Date().toLocaleDateString('id-ID')],
+        [],
+        ['RINGKASAN'],
+        ['Total Penjualan', formatCurrency(stats.totalSales)],
+        ['Total Pembelian', formatCurrency(stats.totalPurchases)],
+        ['Laba Kotor', formatCurrency(stats.profit)],
+        ['Jumlah Transaksi', stats.transactionCount],
+        ['Rata-rata Transaksi', formatCurrency(stats.transactionCount > 0 ? stats.totalSales / stats.transactionCount : 0)],
+        [],
+      ];
+
+      // Sales data
+      const salesData = [
+        ['RIWAYAT PENJUALAN'],
+        ['Tanggal', 'Kasir', 'Metode Pembayaran', 'Total'],
+        ...sales.map(sale => [
+          formatDate(sale.created_at),
+          sale.user_name,
+          getPaymentMethodLabel(sale.payment_method),
+          sale.total,
+        ]),
+        [],
+      ];
+
+      // Purchases data
+      const purchasesData = [
+        ['RIWAYAT PEMBELIAN'],
+        ['Tanggal', 'Supplier', 'Status Pembayaran', 'Total'],
+        ...purchases.map(purchase => [
+          formatDate(purchase.created_at),
+          purchase.supplier_name,
+          purchase.payment_status === 'lunas' ? 'Lunas' : 
+           purchase.payment_status === 'belum_lunas' ? 'Belum Lunas' : 'Cicilan',
+          purchase.total,
+        ]),
+      ];
+
+      // Combine all data
+      const allData = [...summaryData, ...salesData, ...purchasesData];
+
+      // Create worksheet
+      const ws = XLSX.utils.aoa_to_sheet(allData);
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 15 },
+      ];
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Keuangan');
+
+      // Generate filename
+      const filename = `Laporan_Keuangan_${dateFilterLabel.replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      // Save file
+      XLSX.writeFile(wb, filename);
+
+      toast({
+        title: 'Berhasil',
+        description: 'Laporan berhasil diexport ke Excel',
+      });
+    } catch (error) {
+      console.error('Error exporting:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal mengexport laporan',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

@@ -49,11 +49,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) throw error;
+
+    // Check tenant status
+    if (authData.user) {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('tenant_id, tenants(status)')
+        .eq('user_id', authData.user.id)
+        .single();
+
+      if (userError) {
+        await supabase.auth.signOut();
+        throw new Error('Gagal memuat data user');
+      }
+
+      // Check if tenant is inactive
+      if (userData?.tenants && (userData.tenants as any).status === 'inactive') {
+        await supabase.auth.signOut();
+        throw new Error('Akun tenant Anda telah dinonaktifkan. Silakan hubungi administrator.');
+      }
+    }
   };
 
   const signOut = async () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   Dialog,
@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/../supabase/supabase';
 import { useAuth } from '@/../supabase/auth';
 import { useToast } from '@/components/ui/use-toast';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Camera, X } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -45,7 +47,9 @@ export default function ProductDialog({ open, onOpenChange, product, onSuccess }
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>();
+  const [scanning, setScanning] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>();
 
   useEffect(() => {
     if (product) {
@@ -68,6 +72,61 @@ export default function ProductDialog({ open, onOpenChange, product, onSuccess }
       });
     }
   }, [product, reset]);
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(console.error);
+      }
+    };
+  }, []);
+
+  const startScanner = async () => {
+    try {
+      const scanner = new Html5Qrcode("barcode-scanner");
+      scannerRef.current = scanner;
+      setScanning(true);
+
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
+        (decodedText) => {
+          setValue('barcode', decodedText);
+          stopScanner();
+          toast({
+            title: 'Berhasil',
+            description: `Barcode terdeteksi: ${decodedText}`,
+          });
+        },
+        (errorMessage) => {
+          // Ignore scan errors
+        }
+      );
+    } catch (error) {
+      console.error('Error starting scanner:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal membuka kamera. Pastikan izin kamera sudah diberikan.',
+        variant: 'destructive',
+      });
+      setScanning(false);
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current = null;
+      } catch (error) {
+        console.error('Error stopping scanner:', error);
+      }
+    }
+    setScanning(false);
+  };
 
   const onSubmit = async (data: FormData) => {
     if (!user) return;
@@ -164,11 +223,28 @@ export default function ProductDialog({ open, onOpenChange, product, onSuccess }
 
           <div className="space-y-2">
             <Label htmlFor="barcode">Barcode</Label>
-            <Input
-              id="barcode"
-              {...register('barcode')}
-              placeholder="Masukkan barcode produk"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="barcode"
+                {...register('barcode')}
+                placeholder="Masukkan barcode produk"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={scanning ? stopScanner : startScanner}
+                title={scanning ? "Stop Scan" : "Scan Barcode"}
+              >
+                {scanning ? <X className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+              </Button>
+            </div>
+            {scanning && (
+              <div className="mt-2 border rounded-lg overflow-hidden bg-black">
+                <div id="barcode-scanner" className="w-full"></div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

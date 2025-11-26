@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      employees: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          email: string
+          full_name: string
+          hired_date: string | null
+          id: string
+          phone: string | null
+          position: string | null
+          status: string | null
+          tenant_id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          email: string
+          full_name: string
+          hired_date?: string | null
+          id?: string
+          phone?: string | null
+          position?: string | null
+          status?: string | null
+          tenant_id: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          email?: string
+          full_name?: string
+          hired_date?: string | null
+          id?: string
+          phone?: string | null
+          position?: string | null
+          status?: string | null
+          tenant_id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employees_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           barcode: string | null

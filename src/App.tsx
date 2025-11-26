@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { Navigate, Route, Routes, useRoutes } from "react-router-dom";
 import routes from "tempo-routes";
 import LoginForm from "./components/auth/LoginForm";
@@ -13,14 +13,52 @@ import PurchaseManagement from "./components/pages/owner/pembelian";
 import ReportsPage from "./components/pages/owner/laporan";
 import SettingsPage from "./components/pages/owner/pengaturan";
 import POSPage from "./components/pages/owner/pos";
+import ManageCashiersPage from "./components/pages/owner/kelola-kasir";
+import CashierDashboard from "./components/pages/kasir/dashboard";
+import SuperAdminDashboard from "./components/pages/superadmin/dashboard";
 import { AuthProvider, useAuth } from '@/../supabase/auth';
+import { supabase } from '@/../supabase/supabase';
 import { Toaster } from "./components/ui/toaster";
 import { LoadingScreen, LoadingSpinner } from "./components/ui/loading-spinner";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
+  const [tenantStatus, setTenantStatus] = useState<string | null>(null);
+  const [checkingTenant, setCheckingTenant] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    const checkTenantStatus = async () => {
+      if (!user) {
+        setCheckingTenant(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('role, tenant_id, tenants(status)')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        // Super admin doesn't have tenant restriction
+        if (data?.role === 'super_admin') {
+          setTenantStatus('active');
+        } else if (data?.tenants) {
+          setTenantStatus((data.tenants as any).status);
+        }
+      } catch (error) {
+        console.error('Error checking tenant status:', error);
+      } finally {
+        setCheckingTenant(false);
+      }
+    };
+
+    checkTenantStatus();
+  }, [user]);
+
+  if (loading || checkingTenant) {
     return <LoadingScreen text="Authenticating..." />;
   }
 
@@ -28,7 +66,62 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" />;
   }
 
+  if (tenantStatus === 'inactive') {
+    signOut();
+    return <Navigate to="/" />;
+  }
+
   return <>{children}</>;
+}
+
+function RoleBasedRedirect() {
+  const { user, loading } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [checkingRole, setCheckingRole] = useState(true);
+
+  useEffect(() => {
+    const checkUserRole = async () => {
+      if (!user) {
+        setCheckingRole(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) throw error;
+        setUserRole(data?.role || null);
+      } catch (error) {
+        console.error('Error checking user role:', error);
+      } finally {
+        setCheckingRole(false);
+      }
+    };
+
+    checkUserRole();
+  }, [user]);
+
+  if (loading || checkingRole) {
+    return <LoadingScreen text="Checking permissions..." />;
+  }
+
+  if (!user) {
+    return <Navigate to="/" />;
+  }
+
+  if (userRole === 'super_admin') {
+    return <Navigate to="/superadmin/dashboard" />;
+  } else if (userRole === 'owner') {
+    return <Navigate to="/owner/dashboard" />;
+  } else if (userRole === 'kasir') {
+    return <Navigate to="/kasir/dashboard" />;
+  }
+
+  return <Navigate to="/owner/dashboard" />;
 }
 
 function AppRoutes() {
@@ -42,7 +135,7 @@ function AppRoutes() {
           path="/dashboard"
           element={
             <PrivateRoute>
-              <Dashboard />
+              <RoleBasedRedirect />
             </PrivateRoute>
           }
         />
@@ -99,6 +192,30 @@ function AppRoutes() {
           element={
             <PrivateRoute>
               <SettingsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/owner/kelola-kasir"
+          element={
+            <PrivateRoute>
+              <ManageCashiersPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/kasir/dashboard"
+          element={
+            <PrivateRoute>
+              <CashierDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/superadmin/dashboard"
+          element={
+            <PrivateRoute>
+              <SuperAdminDashboard />
             </PrivateRoute>
           }
         />

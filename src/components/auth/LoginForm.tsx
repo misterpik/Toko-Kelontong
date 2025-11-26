@@ -17,7 +17,8 @@ export default function LoginForm() {
     e.preventDefault();
     try {
       await signIn(email, password);
-      navigate("/owner/dashboard");
+      // Redirect will be handled by RoleBasedRedirect component
+      navigate("/dashboard");
     } catch (error) {
       setError("Email atau password salah");
     }

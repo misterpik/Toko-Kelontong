@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import OwnerLayout from '@/components/layout/OwnerLayout';
-import { ShoppingCart, Search, Trash2, Plus, Minus, CreditCard, Smartphone, Banknote, Printer, MessageCircle } from 'lucide-react';
+import { ShoppingCart, Search, Trash2, Plus, Minus, CreditCard, Smartphone, Banknote, Printer, MessageCircle, Camera, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/../supabase/supabase';
 import { useAuth } from '@/../supabase/auth';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface Product {
   id: string;
@@ -30,6 +31,15 @@ interface CartItem {
   stock: number;
 }
 
+interface ReceiptData {
+  items: CartItem[];
+  total: number;
+  paymentMethod: string;
+  cashReceived: number;
+  change: number;
+  date: string;
+}
+
 export default function POSPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -42,10 +52,78 @@ export default function POSPage() {
   const [cashReceived, setCashReceived] = useState('');
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   const [lastSaleId, setLastSaleId] = useState<string | null>(null);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     loadProducts();
   }, [user]);
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(console.error);
+      }
+    };
+  }, []);
+
+  const startScanner = async () => {
+    try {
+      const scanner = new Html5Qrcode("pos-barcode-scanner");
+      scannerRef.current = scanner;
+      setScanning(true);
+
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
+        (decodedText) => {
+          // Search for product by barcode
+          const product = products.find(p => p.barcode === decodedText);
+          if (product) {
+            handleAddToCart(product);
+            toast({
+              title: 'Produk Ditemukan',
+              description: `${product.name} ditambahkan ke keranjang`,
+            });
+          } else {
+            toast({
+              title: 'Produk Tidak Ditemukan',
+              description: `Barcode ${decodedText} tidak ditemukan`,
+              variant: 'destructive',
+            });
+          }
+          stopScanner();
+        },
+        (errorMessage) => {
+          // Ignore scan errors
+        }
+      );
+    } catch (error) {
+      console.error('Error starting scanner:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal membuka kamera. Pastikan izin kamera sudah diberikan.',
+        variant: 'destructive',
+      });
+      setScanning(false);
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current = null;
+      } catch (error) {
+        console.error('Error stopping scanner:', error);
+      }
+    }
+    setScanning(false);
+  };
 
   const loadProducts = async () => {
     if (!user) return;
@@ -239,6 +317,16 @@ export default function POSPage() {
         description: 'Penjualan berhasil disimpan',
       });
 
+      // Save receipt data
+      setReceiptData({
+        items: [...cart],
+        total,
+        paymentMethod,
+        cashReceived: received,
+        change,
+        date: new Date().toISOString(),
+      });
+
       setLastSaleId(saleData.id);
       setCheckoutDialogOpen(false);
       setReceiptDialogOpen(true);
@@ -261,10 +349,190 @@ export default function POSPage() {
   };
 
   const handlePrintReceipt = () => {
-    toast({
-      title: 'Cetak Struk',
-      description: 'Fitur cetak struk sedang dalam pengembangan',
-    });
+    if (!receiptData) {
+      toast({
+        title: 'Error',
+        description: 'Data struk tidak ditemukan',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Create print window
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({
+        title: 'Error',
+        description: 'Gagal membuka jendela cetak. Pastikan popup tidak diblokir.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Generate receipt HTML
+    const receiptHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Struk Pembayaran</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            max-width: 300px;
+            margin: 0 auto;
+          }
+          .receipt {
+            border: 1px solid #000;
+            padding: 15px;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 10px;
+          }
+          .header h1 {
+            font-size: 18px;
+            margin-bottom: 5px;
+          }
+          .header p {
+            font-size: 11px;
+          }
+          .info {
+            margin-bottom: 15px;
+            font-size: 11px;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 10px;
+          }
+          .items {
+            margin-bottom: 15px;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 10px;
+          }
+          .item {
+            margin-bottom: 8px;
+            font-size: 11px;
+          }
+          .item-name {
+            font-weight: bold;
+          }
+          .item-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2px;
+          }
+          .totals {
+            font-size: 12px;
+          }
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+          }
+          .total-row.grand {
+            font-weight: bold;
+            font-size: 14px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #000;
+          }
+          .footer {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 11px;
+            border-top: 1px dashed #000;
+            padding-top: 10px;
+          }
+          @media print {
+            body {
+              padding: 0;
+            }
+            .receipt {
+              border: none;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="header">
+            <h1>TOKO KELONTONG</h1>
+            <p>Struk Pembayaran</p>
+          </div>
+          
+          <div class="info">
+            <div>Tanggal: ${new Date(receiptData.date).toLocaleDateString('id-ID', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}</div>
+            <div>Kasir: ${user?.email || '-'}</div>
+            <div>No. Transaksi: ${lastSaleId?.substring(0, 8).toUpperCase() || '-'}</div>
+          </div>
+          
+          <div class="items">
+            ${receiptData.items.map(item => `
+              <div class="item">
+                <div class="item-name">${item.product_name}</div>
+                <div class="item-detail">
+                  <span>${item.quantity} x ${formatCurrency(item.price)}</span>
+                  <span>${formatCurrency(item.subtotal)}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="totals">
+            <div class="total-row grand">
+              <span>TOTAL</span>
+              <span>${formatCurrency(receiptData.total)}</span>
+            </div>
+            ${receiptData.paymentMethod === 'cash' ? `
+              <div class="total-row">
+                <span>Tunai</span>
+                <span>${formatCurrency(receiptData.cashReceived)}</span>
+              </div>
+              <div class="total-row">
+                <span>Kembalian</span>
+                <span>${formatCurrency(receiptData.change)}</span>
+              </div>
+            ` : `
+              <div class="total-row">
+                <span>Metode</span>
+                <span>${receiptData.paymentMethod === 'qris' ? 'QRIS' : 'E-Wallet'}</span>
+              </div>
+            `}
+          </div>
+          
+          <div class="footer">
+            <p>Terima Kasih</p>
+            <p>Selamat Berbelanja Kembali</p>
+          </div>
+        </div>
+        
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() {
+              window.close();
+            };
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(receiptHTML);
+    printWindow.document.close();
+    
     setReceiptDialogOpen(false);
   };
 
@@ -305,14 +573,32 @@ export default function POSPage() {
                 <CardTitle>Cari Produk</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Cari nama produk atau scan barcode..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Cari nama produk atau scan barcode..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 pr-12"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 transform -translate-y-1/2"
+                      onClick={scanning ? stopScanner : startScanner}
+                      title={scanning ? "Stop Scan" : "Scan Barcode"}
+                    >
+                      {scanning ? <X className="h-4 w-4 text-red-600" /> : <Camera className="h-4 w-4 text-blue-600" />}
+                    </Button>
+                  </div>
+                  
+                  {scanning && (
+                    <div className="border rounded-lg overflow-hidden bg-black">
+                      <div id="pos-barcode-scanner" className="w-full"></div>
+                    </div>
+                  )}
                 </div>
 
                 {searchQuery && (

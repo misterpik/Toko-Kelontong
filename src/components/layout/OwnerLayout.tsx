@@ -11,7 +11,8 @@ import {
   X,
   LogOut,
   Store,
-  CreditCard
+  CreditCard,
+  UserPlus
 } from 'lucide-react';
 import { useAuth } from '@/../supabase/auth';
 import { Button } from '../ui/button';
@@ -28,6 +29,7 @@ const menuItems = [
   { icon: Users, label: 'Supplier', path: '/owner/supplier' },
   { icon: ShoppingCart, label: 'Pembelian', path: '/owner/pembelian' },
   { icon: FileText, label: 'Laporan', path: '/owner/laporan' },
+  { icon: UserPlus, label: 'Kelola Kasir', path: '/owner/kelola-kasir' },
   { icon: Settings, label: 'Pengaturan', path: '/owner/pengaturan' },
 ];
 
