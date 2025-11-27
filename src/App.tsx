@@ -36,7 +36,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('role, tenant_id, tenants(status)')
+          .select('role, tenant_id')
           .eq('user_id', user.id)
           .single();
 
@@ -45,8 +45,15 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
         // Super admin doesn't have tenant restriction
         if (data?.role === 'super_admin') {
           setTenantStatus('active');
-        } else if (data?.tenants) {
-          setTenantStatus((data.tenants as any).status);
+        } else if (data?.tenant_id) {
+          const { data: tenantData, error: tenantError } = await supabase
+            .from('tenants')
+            .select('status')
+            .eq('id', data.tenant_id)
+            .single();
+
+          if (tenantError) throw tenantError;
+          setTenantStatus(tenantData?.status || 'active');
         }
       } catch (error) {
         console.error('Error checking tenant status:', error);

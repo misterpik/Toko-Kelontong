@@ -1,0 +1,17 @@
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own data" ON users;
+DROP POLICY IF EXISTS "Users can view their own data" ON users;
+DROP POLICY IF EXISTS "Users can read own data" ON users;
+DROP POLICY IF EXISTS "Service role can view all users" ON users;
+DROP POLICY IF EXISTS "Users can insert own data" ON users;
+DROP POLICY IF EXISTS "Users can update own data" ON users;
+
+CREATE POLICY "Users can view own data" ON users
+    FOR SELECT USING (auth.uid()::text = user_id);
+
+CREATE POLICY "Users can insert own data" ON users
+    FOR INSERT WITH CHECK (auth.uid()::text = user_id);
+
+CREATE POLICY "Users can update own data" ON users
+    FOR UPDATE USING (auth.uid()::text = user_id);
