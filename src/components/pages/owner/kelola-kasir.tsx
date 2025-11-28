@@ -32,6 +32,7 @@ export default function ManageCashiersPage() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -41,42 +42,70 @@ export default function ManageCashiersPage() {
   });
 
   useEffect(() => {
-    loadEmployees();
+    loadTenantAndEmployees();
   }, [user]);
 
-  const loadEmployees = async () => {
+  const loadTenantAndEmployees = async () => {
     if (!user) return;
 
     try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get owner's tenant_id (only once on mount)
+      if (!tenantId) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('tenant_id')
+          .eq('user_id', user.id)
+          .single();
 
-      if (!userData?.tenant_id) return;
-
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('tenant_id', userData.tenant_id)
-        .eq('position', 'kasir')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error loading employees:', error);
-        throw error;
+        if (!userData?.tenant_id) return;
+        setTenantId(userData.tenant_id);
+        
+        // Load employees with this tenant_id
+        await loadEmployeesWithTenantId(userData.tenant_id);
+      } else {
+        // Use cached tenant_id
+        await loadEmployeesWithTenantId(tenantId);
       }
-      
-      console.log('Loaded employees:', data);
-      setEmployees(data || []);
     } catch (error) {
-      console.error('Error loading employees:', error);
+      console.error('Error loading tenant and employees:', error);
       toast({
         title: 'Error',
         description: 'Gagal memuat data kasir',
         variant: 'destructive',
       });
+    }
+  };
+
+  const loadEmployeesWithTenantId = async (tenant_uuid: string) => {
+    try {
+      // Load kasir using RPC function (now with improved auth check)
+      const { data, error } = await supabase
+        .rpc('get_tenant_kasir', { tenant_uuid });
+
+      if (error) {
+        console.error('Error loading kasir:', error);
+        throw error;
+      }
+      
+      // Transform data to match Employee interface
+      const kasirData = data?.map((row: any) => ({
+        id: row.user_id,
+        user_id: row.user_id,
+        full_name: row.full_name,
+        email: row.email,
+        phone: row.phone || null,
+        address: row.address || null,
+        position: 'kasir',
+        status: 'active',
+        hired_date: row.created_at,
+        created_at: row.created_at,
+      })) || [];
+      
+      console.log('Loaded kasir:', kasirData);
+      setEmployees(kasirData);
+    } catch (error) {
+      console.error('Error loading kasir:', error);
+      throw error;
     }
   };
 
@@ -129,6 +158,7 @@ export default function ManageCashiersPage() {
         throw new Error('Gagal membuat user');
       }
 
+      // Update user with role and tenant_id
       const { error: updateError } = await supabase
         .from('users')
         .update({
@@ -140,25 +170,11 @@ export default function ManageCashiersPage() {
 
       if (updateError) {
         console.error('Error updating user role:', updateError);
+        throw updateError;
       }
 
-      const { error: employeeError } = await supabase
-        .from('employees')
-        .insert({
-          tenant_id: ownerData.tenant_id,
-          user_id: authData.user.id,
-          full_name: formData.full_name,
-          email: formData.email,
-          phone: formData.phone || null,
-          address: formData.address || null,
-          position: 'kasir',
-          status: 'active',
-        });
-
-      if (employeeError) {
-        console.error('Error creating employee:', employeeError);
-        throw employeeError;
-      }
+      // Note: We're not using employees table anymore
+      // All kasir data is stored in users table with role='kasir'
 
       toast({
         title: 'Berhasil',
@@ -167,7 +183,11 @@ export default function ManageCashiersPage() {
 
       setDialogOpen(false);
       setFormData({ full_name: '', email: '', password: '', phone: '', address: '' });
-      loadEmployees();
+      
+      // Reload employees using cached tenant_id
+      if (tenantId) {
+        await loadEmployeesWithTenantId(tenantId);
+      }
     } catch (error: any) {
       console.error('Error adding cashier:', error);
       toast({
@@ -185,20 +205,18 @@ export default function ManageCashiersPage() {
 
     setLoading(true);
     try {
-      const { error: employeeError } = await supabase
-        .from('employees')
-        .delete()
-        .eq('id', employeeId);
+      // Delete from auth.users (this will cascade to public.users)
+      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
-      if (employeeError) throw employeeError;
+      if (authError) {
+        console.error('Error deleting auth user:', authError);
+        // If admin delete fails, try deleting from public.users only
+        const { error: userError } = await supabase
+          .from('users')
+          .delete()
+          .eq('user_id', userId);
 
-      const { error: userError } = await supabase
-        .from('users')
-        .delete()
-        .eq('user_id', userId);
-
-      if (userError) {
-        console.error('Error deleting user:', userError);
+        if (userError) throw userError;
       }
 
       toast({
@@ -206,7 +224,10 @@ export default function ManageCashiersPage() {
         description: 'Kasir berhasil dihapus',
       });
 
-      loadEmployees();
+      // Reload employees using cached tenant_id
+      if (tenantId) {
+        await loadEmployeesWithTenantId(tenantId);
+      }
     } catch (error: any) {
       console.error('Error deleting cashier:', error);
       toast({
