@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp",
+      "disabled": false,
+      "autoApprove": [
+        "list_organizations",
+        "list_projects",
+        "list_tables",
+        "execute_sql",
+        "apply_migration",
+        "get_advisors",
+        "get_project_url",
+        "get_anon_key"
+      ]
+    }
+  }
+}

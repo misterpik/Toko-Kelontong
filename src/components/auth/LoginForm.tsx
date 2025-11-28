@@ -15,12 +15,19 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(""); // Clear previous errors
     try {
       await signIn(email, password);
       // Redirect will be handled by RoleBasedRedirect component
       navigate("/dashboard");
-    } catch (error) {
-      setError("Email atau password salah");
+    } catch (error: any) {
+      console.error('Login error:', error);
+      // Show more detailed error message
+      if (error.message) {
+        setError(error.message);
+      } else {
+        setError("Email atau password salah");
+      }
     }
   };
 

@@ -51,38 +51,49 @@ export default function SuperAdminDashboard() {
 
   const loadTenants = async () => {
     try {
+      // Use RPC function to get tenants with owner info (bypasses RLS)
       const { data, error } = await supabase
-        .from('tenants')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .rpc('get_tenants_with_owners');
 
       if (error) throw error;
 
-      setTenants(data || []);
+      // Transform data to match Tenant interface
+      const tenantsWithOwners = data?.map((row: any) => ({
+        id: row.tenant_id,
+        name: row.tenant_name,
+        status: row.tenant_status,
+        subdomain: row.tenant_subdomain,
+        created_at: row.tenant_created_at,
+        updated_at: row.tenant_updated_at,
+        owner_name: row.owner_name || '-',
+        owner_email: row.owner_email || '-',
+      })) || [];
+
+      setTenants(tenantsWithOwners);
       
-      const active = data?.filter(t => t.status === 'active').length || 0;
-      const inactive = data?.filter(t => t.status === 'inactive').length || 0;
+      const active = tenantsWithOwners.filter(t => t.status === 'active').length;
+      const inactive = tenantsWithOwners.filter(t => t.status === 'inactive').length;
       
       setStats({
-        totalTenants: data?.length || 0,
+        totalTenants: tenantsWithOwners.length,
         activeTenants: active,
         inactiveTenants: inactive,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading tenants:', error);
       toast({
         title: 'Error',
-        description: 'Gagal memuat data tenant',
+        description: error.message || 'Gagal memuat data tenant',
         variant: 'destructive',
       });
     }
   };
 
   const handleAddTenant = async () => {
-    if (!formData.name || !formData.owner_name || !formData.owner_email) {
+    if (!formData.name) {
       toast({
         title: 'Error',
-        description: 'Semua field harus diisi',
+        description: 'Nama toko harus diisi',
         variant: 'destructive',
       });
       return;
@@ -90,12 +101,11 @@ export default function SuperAdminDashboard() {
 
     setLoading(true);
     try {
+      // Only insert tenant data (owner info will be added when owner signs up)
       const { error } = await supabase
         .from('tenants')
         .insert({
           name: formData.name,
-          owner_name: formData.owner_name,
-          owner_email: formData.owner_email,
           status: 'active',
         });
 
@@ -103,7 +113,7 @@ export default function SuperAdminDashboard() {
 
       toast({
         title: 'Berhasil',
-        description: 'Tenant berhasil ditambahkan',
+        description: 'Tenant berhasil ditambahkan. Owner dapat mendaftar menggunakan email mereka.',
       });
 
       setDialogOpen(false);
@@ -126,12 +136,11 @@ export default function SuperAdminDashboard() {
 
     setLoading(true);
     try {
+      // Only update tenant name (owner info is in users table)
       const { error } = await supabase
         .from('tenants')
         .update({
           name: formData.name,
-          owner_name: formData.owner_name,
-          owner_email: formData.owner_email,
         })
         .eq('id', editingTenant.id);
 
@@ -408,26 +417,30 @@ export default function SuperAdminDashboard() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="owner_name">Nama Owner *</Label>
-              <Input
-                id="owner_name"
-                placeholder="Nama pemilik toko"
-                value={formData.owner_name}
-                onChange={(e) => setFormData({ ...formData, owner_name: e.target.value })}
-              />
-            </div>
+            {!editingTenant && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Info:</strong> Setelah tenant dibuat, owner dapat mendaftar menggunakan halaman signup dan memilih tenant ini.
+                </p>
+              </div>
+            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="owner_email">Email Owner *</Label>
-              <Input
-                id="owner_email"
-                type="email"
-                placeholder="email@example.com"
-                value={formData.owner_email}
-                onChange={(e) => setFormData({ ...formData, owner_email: e.target.value })}
-              />
-            </div>
+            {editingTenant && (
+              <div className="space-y-2">
+                <Label className="text-gray-600">Owner Saat Ini</Label>
+                <div className="bg-gray-50 border rounded-lg p-3 space-y-1">
+                  <p className="text-sm">
+                    <span className="font-medium">Nama:</span> {editingTenant.owner_name}
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-medium">Email:</span> {editingTenant.owner_email}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Info owner tidak dapat diubah di sini. Owner dapat mengupdate profil mereka sendiri.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
